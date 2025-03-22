@@ -16,3 +16,8 @@ export interface UploadedFile {
   name: string;
   size: number;
 }
+
+// Phản hồi từ RAG API
+export interface RAGResponse {
+  response: string;
+}
