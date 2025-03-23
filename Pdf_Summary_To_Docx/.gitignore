@@ -1,0 +1,8 @@
+.venv
+CSV/
+PDF/
+*.pdf
+*.csv
+*.xlsx
+*.docx
+*.txt
