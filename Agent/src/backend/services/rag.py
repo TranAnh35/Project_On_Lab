@@ -95,7 +95,6 @@ class RAGService:
                     chunk_id = self.chunk_id_mapping[idx]
                     content = self.vector_db.get_chunk_by_id(chunk_id)
                     if content:
-                        print(f"Found content for chunk_id {chunk_id}: {content[:100]}...")
                         contexts.append(content)
 
             # Kết hợp các contexts thành một đoạn văn bản
@@ -113,19 +112,8 @@ class RAGService:
             # Lấy context từ FAISS
             context = self.retrieve_context(question)
             
-            # Tạo prompt với context và câu hỏi
-            prompt = f"""Dựa trên thông tin sau đây, hãy trả lời câu hỏi một cách chính xác và ngắn gọn:
-
-                Thông tin:
-                {context}
-
-                Câu hỏi: {question}
-
-                Trả lời:"""
-            
-            # Sinh câu trả lời từ LLM
-            response = await self.llm.generate(prompt)
-            return response
+            # Sử dụng generateContent với context từ RAG
+            return context
 
         except Exception as e:
             print(f"Lỗi khi xử lý câu hỏi: {str(e)}")

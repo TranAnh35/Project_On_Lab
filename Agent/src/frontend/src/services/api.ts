@@ -1,5 +1,6 @@
 import api from '../lib/axios';
-import { GenerateContentResponse, UploadedFile } from '../types/api';
+import { GenerateContentResponse } from '../types/api';
+import { UploadedFile } from '../types/interface';
 
 // Gọi API tạo nội dung từ LLM và RAG
 export const generateContent = async (prompt: string): Promise<GenerateContentResponse> => {
@@ -7,12 +8,9 @@ export const generateContent = async (prompt: string): Promise<GenerateContentRe
   const ragResponse = await api.get<{ response: string }>('/rag/query', { params: { question: prompt } });
   
   // Lấy thông tin từ LLM
-  const llmResponse = await api.get('/generate/content', { params: { prompt } });
+  const llmResponse = await api.get('/generate/content', { params: { prompt, tools_response: ragResponse.data.response } });
   
-  // Kết hợp cả hai kết quả
-  const combinedContent = `${ragResponse.data.response}\n\n${llmResponse.data.content}`;
-  
-  return { content: combinedContent };
+  return { content: llmResponse.data.content };
 };
 
 // Gọi API lấy danh sách file đã upload

@@ -5,5 +5,5 @@ router = APIRouter()
 gen_service = GeneratorService()
 
 @router.get("/content")
-async def generate_content(prompt: str):
-    return {"content": await gen_service.generate_content(prompt)}
+async def generate_content(prompt: str, tools_response: str = None):
+    return {"content": await gen_service.generate_content(prompt, tools_response)}
