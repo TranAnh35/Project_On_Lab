@@ -5,11 +5,6 @@ router = APIRouter()
 rag_service = RAGService()
 rag_service.index_files()
 
-@router.get("/rag")
-async def query_rag(question: str):
-    response = await rag_service.query(question)
-    return {"response": response}
-
 @router.get("/query")
 async def rag_query(question: str):
     return {"response": await rag_service.query(question)}

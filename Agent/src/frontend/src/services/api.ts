@@ -1,10 +1,18 @@
 import api from '../lib/axios';
-import { GenerateContentResponse, UploadedFile, RAGResponse } from '../types/api';
+import { GenerateContentResponse, UploadedFile } from '../types/api';
 
-// Gọi API tạo nội dung từ LLM
+// Gọi API tạo nội dung từ LLM và RAG
 export const generateContent = async (prompt: string): Promise<GenerateContentResponse> => {
-  const response = await api.get('/generate/content', { params: { prompt } });
-  return response.data;
+  // Lấy thông tin từ RAG
+  const ragResponse = await api.get<{ response: string }>('/rag/query', { params: { question: prompt } });
+  
+  // Lấy thông tin từ LLM
+  const llmResponse = await api.get('/generate/content', { params: { prompt } });
+  
+  // Kết hợp cả hai kết quả
+  const combinedContent = `${ragResponse.data.response}\n\n${llmResponse.data.content}`;
+  
+  return { content: combinedContent };
 };
 
 // Gọi API lấy danh sách file đã upload
@@ -27,12 +35,7 @@ export const uploadFile = async (file: File): Promise<void> => {
 };
 
 // Xóa file khỏi server
-export const deleteFile = async (fileId: string): Promise<void> => {
-  await api.delete(`/files/delete/${fileId}`);
-};
-
-// Gửi truy vấn RAG
-export const queryRAG = async (question: string): Promise<RAGResponse> => {
-  const response = await api.get<{ response: string }>('/rag/query', { params: { question } });
-  return response.data;
+export const deleteFile = async (filename: string): Promise<void> => {
+  const encodedFilename = encodeURIComponent(filename);
+  await api.delete(`/files/delete/${encodedFilename}`);
 };

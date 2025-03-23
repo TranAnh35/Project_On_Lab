@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Send, Square } from 'lucide-react';
 import { Button } from './ui/button';
 import { Message } from '../types/api';
-import { generateContent, queryRAG } from '../services/api';
+import { generateContent } from '../services/api';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { solarizedlight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ReactMarkdown from 'react-markdown';
@@ -31,15 +31,11 @@ export const ChatBox: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const isRAGQuery = input.toLowerCase().startsWith('rag:');
-      const query = isRAGQuery ? input.replace(/^rag:\s*/, '') : input;
-      const data = isRAGQuery ? await queryRAG(query) : await generateContent(query);
-
-      console.log(isRAGQuery)
+      const data = await generateContent(input);
 
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: data.response || data.content, // RAG trả về `response`, LLM trả về `content`
+        content: data.content,
         sender: 'bot',
         timestamp: new Date(),
       };
@@ -189,7 +185,7 @@ export const ChatBox: React.FC = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && (isTyping ? handleStopTyping() : handleSend())}
-            placeholder="Nhập tin nhắn... (hoặc dùng 'rag:' để truy vấn RAG)"
+            placeholder="Nhập tin nhắn..."
             className="flex-1 rounded-lg border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={isLoading}
           />
