@@ -1,7 +1,7 @@
 // components/Header.tsx
 import React from 'react';
 import { Menu, Upload, Settings } from 'lucide-react';
-import { Button } from './ui/button';
+import { Button } from '../ui/button';
 
 interface HeaderProps {
   onUploadClick: () => void;

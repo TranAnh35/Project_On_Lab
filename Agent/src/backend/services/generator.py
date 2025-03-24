@@ -4,5 +4,5 @@ class GeneratorService:
     def __init__(self):
         self.llm = LLM()
 
-    async def generate_content(self, prompt, tools_response: str = None) -> str:
-        return await self.llm.generateContent(prompt, tools_response)
+    async def generate_content(self, prompt, rag_response: str = None, web_response: str = None, file_response: str = None) -> str:
+        return await self.llm.generateContent(prompt, rag_response, web_response, file_response)

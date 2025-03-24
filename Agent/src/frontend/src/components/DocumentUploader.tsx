@@ -23,7 +23,6 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onClose }) =
   };
 
   const handleDelete = async (filename: string) => {
-    console.log(filename);
     await deleteFile(filename);
     loadFiles();
   };
@@ -35,6 +34,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onClose }) =
       'text/plain': ['.txt'],
       'application/msword': ['.doc'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/x-yaml': ['.yaml']
     },
   });
 
@@ -42,7 +42,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onClose }) =
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white rounded-xl w-full max-w-4xl mx-4 overflow-hidden shadow-2xl">
         {/* Header */}
-        <div className="border-b px-6 py-4 flex justify-between items-center">
+        <div className="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-800">Upload Documents</h2>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />
@@ -58,6 +58,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onClose }) =
                 h-full
                 border-2 
                 border-dashed 
+                border-gray-200
                 rounded-xl 
                 flex 
                 flex-col 
@@ -93,7 +94,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onClose }) =
           </div>
 
           {/* Sidebar */}
-          <div className="w-80 border-l bg-gray-50">
+          <div className="w-80 border-l border-gray-200 bg-gray-50">
             <div className="p-4">
               <h3 className="font-semibold text-gray-700 mb-3">Uploaded Files</h3>
               <div className="space-y-2">

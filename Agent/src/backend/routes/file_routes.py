@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from services.file_manager import save_file, delete_file, list_files
+from services.file_manager import save_file, delete_file, list_files, read_uploaded_file
 from services.vector_db import VectorDB
 from urllib.parse import unquote
 
@@ -26,3 +26,14 @@ async def delete_uploaded_file(file_name: str):
         vector_db.delete_file_from_db(decoded_filename)
         return {"message": "File deleted successfully"}
     raise HTTPException(status_code=404, detail="File not found")
+
+@router.post("/read")
+async def read_file(file: UploadFile = File(...)):
+    """
+    Đọc nội dung file được gửi trực tiếp từ frontend.
+    """
+    try:
+        content = await read_uploaded_file(file)
+        return {"file_name": file.filename, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")

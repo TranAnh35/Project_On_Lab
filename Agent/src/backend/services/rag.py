@@ -4,9 +4,11 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from services.vector_db import VectorDB
 from models.llm import LLM
+import time
 
 FAISS_INDEX_PATH = "faiss_index.bin"
 CHUNK_MAPPING_PATH = "chunk_mapping.npy"
+LAST_CHECK_FILE = "last_check.txt"
 
 class RAGService:
     def __init__(self):
@@ -15,8 +17,84 @@ class RAGService:
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.index = None
         self.llm = LLM()
-        self.chunk_id_mapping = []  # List để lưu mapping
-        self.load_or_create_index()
+        self.chunk_id_mapping = []
+        self.load_or_create_index()  # Chỉ tải hoặc tạo index, không index lại files
+        self.last_check_time = self.load_last_check_time()
+
+    def load_last_check_time(self):
+        """Tải thời gian kiểm tra cuối cùng"""
+        try:
+            if os.path.exists(LAST_CHECK_FILE):
+                with open(LAST_CHECK_FILE, 'r') as f:
+                    return float(f.read().strip())
+            return 0
+        except Exception as e:
+            print(f"Lỗi khi tải thời gian kiểm tra cuối: {str(e)}")
+            return 0
+
+    def save_last_check_time(self):
+        """Lưu thời gian kiểm tra hiện tại"""
+        try:
+            with open(LAST_CHECK_FILE, 'w') as f:
+                f.write(str(time.time()))
+        except Exception as e:
+            print(f"Lỗi khi lưu thời gian kiểm tra: {str(e)}")
+
+    def check_and_update_files(self):
+        """Kiểm tra và cập nhật database nếu có thay đổi thực sự trong thư mục uploaded_files"""
+        try:
+            current_time = time.time()
+            should_reindex = False
+            
+            files = os.listdir(self.uploaded_files_dir)
+            db_files = self.vector_db.get_all_files()
+            db_file_names = {file[1] for file in db_files}
+            db_file_dict = {file[1]: file[4] for file in db_files}
+            
+            uploaded_files_info = {}
+            for file_name in files:
+                file_path = os.path.join(self.uploaded_files_dir, file_name)
+                if file_name.endswith(('.txt', '.pdf', '.doc', '.docx', '.yaml', '.yml')):
+                    mtime = os.path.getmtime(file_path)
+                    uploaded_files_info[file_name] = mtime
+            
+            new_or_modified_files = []
+            for file_name, mtime in uploaded_files_info.items():
+                if file_name not in db_file_names or mtime > self.last_check_time:
+                    new_or_modified_files.append(file_name)
+                    should_reindex = True
+            
+            deleted_files = [f for f in db_file_names if f not in uploaded_files_info]
+            if deleted_files:
+                should_reindex = True
+            
+            if should_reindex:
+                print("Phát hiện thay đổi trong thư mục uploaded_files:")
+                if new_or_modified_files:
+                    print(f"File mới hoặc đã sửa: {new_or_modified_files}")
+                if deleted_files:
+                    print(f"File đã xóa: {deleted_files}")
+                
+                for file_name in deleted_files:
+                    self.vector_db.delete_file_data(file_name)
+                
+                for file_name in new_or_modified_files:
+                    file_path = os.path.join(self.uploaded_files_dir, file_name)
+                    try:
+                        self.vector_db.process_file(file_path)
+                    except Exception as e:
+                        print(f"Lỗi khi xử lý file {file_name}: {str(e)}")
+                
+                self.index_files()
+                self.save_last_check_time()
+                self.last_check_time = current_time
+                return True
+            
+            return False
+        
+        except Exception as e:
+            print(f"Lỗi khi kiểm tra và cập nhật files: {str(e)}")
+            return False
 
     def load_or_create_index(self):
         """Tải hoặc tạo mới FAISS index và chunk mapping"""
@@ -46,7 +124,7 @@ class RAGService:
             self.chunk_id_mapping = []
             
             for file_name in files:
-                if file_name.endswith(('.txt', '.pdf', '.doc', '.docx')):
+                if file_name.endswith(('.txt', '.pdf', '.doc', '.docx', '.yaml', '.yml')):
                     file_path = os.path.join(self.uploaded_files_dir, file_name)
                     try:
                         # Xử lý file với VectorDB
@@ -81,8 +159,8 @@ class RAGService:
             # Tạo vector embedding cho câu hỏi
             query_vector = self.model.encode(query, convert_to_tensor=False).reshape(1, -1)
             
-            # Tìm kiếm 3 kết quả gần nhất
-            distances, indices = self.index.search(query_vector, 3)
+            # Tìm kiếm 5 kết quả gần nhất
+            distances, indices = self.index.search(query_vector, 5)
             
             if indices[0][0] == -1 or len(self.chunk_id_mapping) == 0:
                 return "Không tìm thấy thông tin phù hợp."
@@ -113,7 +191,8 @@ class RAGService:
             context = self.retrieve_context(question)
             
             # Sử dụng generateContent với context từ RAG
-            return context
+            response = await self.llm.generateContent(question, context)
+            return response
 
         except Exception as e:
             print(f"Lỗi khi xử lý câu hỏi: {str(e)}")

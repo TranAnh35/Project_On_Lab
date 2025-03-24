@@ -4,16 +4,24 @@ from bs4 import BeautifulSoup
 import PyPDF2
 from docx import Document
 import re
+import yaml
 from datetime import datetime
 
 class VectorDB:
-    def __init__(self):
-        self.db_path = "vector_store.db"
-        self.uploaded_files_dir = "uploaded_files"
-        self.chunk_size = 1000
-        self.chunk_overlap = 100
-        self.current_version = 2  # Tăng version lên 2
-        self.init_db()
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(VectorDB, cls).__new__(cls)
+            cls._instance.db_path = "vector_store.db"
+            cls._instance.uploaded_files_dir = "uploaded_files"
+            cls._instance.chunk_size = 1000
+            cls._instance.chunk_overlap = 100
+            cls._instance.current_version = 2
+            if not os.path.exists(cls._instance.db_path):
+                print("Database không tồn tại, tạo mới...")
+                cls._instance.init_db()
+        return cls._instance
 
     def init_db(self):
         """Khởi tạo database SQLite"""
@@ -148,108 +156,71 @@ class VectorDB:
             
         return chunks
 
-    def read_pdf(self, file_path: str) -> str:
-        """Đọc nội dung file PDF."""
-        try:
-            with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                text = ""
-                for page in pdf_reader.pages:
-                    text += page.extract_text() + "\n"
-                return text
-        except Exception as e:
-            print(f"Lỗi khi đọc file PDF {file_path}: {str(e)}")
-            raise
-
-    def read_docx(self, file_path: str) -> str:
-        """Đọc nội dung file DOCX."""
-        try:
-            doc = Document(file_path)
-            text = ""
-            for paragraph in doc.paragraphs:
-                text += paragraph.text + "\n"
-            return text
-        except Exception as e:
-            print(f"Lỗi khi đọc file DOCX {file_path}: {str(e)}")
-            raise
-
     def process_file(self, file_path: str):
-        """Xử lý file và lưu vào database"""
+        from services.file_manager import read_pdf, read_docx, read_yaml, read_txt_file
+        """Xử lý file và lưu vào database chỉ khi nội dung thay đổi"""
         try:
             file_name = os.path.basename(file_path)
-            file_size = os.path.getsize(file_path)
-            file_extension = os.path.splitext(file_name)[1].lower()
             
             # Đọc nội dung file
-            if file_extension == '.txt':
-                content = self._read_txt_file(file_path)
-            elif file_extension == '.pdf':
-                content = self.read_pdf(file_path)
-            elif file_extension in ['.doc', '.docx']:
-                content = self.read_docx(file_path)
+            if file_name.endswith('.pdf'):
+                content = read_pdf(file_path)
+            elif file_name.endswith(('.txt', '.md')):
+                content = read_txt_file(file_path)
+            elif file_name.endswith(('.doc', '.docx')):
+                content = read_docx(file_path)
+            elif file_name.endswith(('.yaml', '.yml')):
+                content = read_yaml(file_path)
             else:
-                raise Exception(f"Định dạng file không được hỗ trợ: {file_extension}")
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
             
-            # Lưu vào database
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            try:
-                cursor.execute("BEGIN TRANSACTION")
+            # Kết nối database
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
                 
-                # Cập nhật hoặc thêm mới thông tin file
+                # Kiểm tra file hiện tại trong database
+                cursor.execute("SELECT id, size FROM files WHERE name = ?", (file_name,))
+                result = cursor.fetchone()
+                
+                # Nếu file đã tồn tại, kiểm tra xem nội dung có thay đổi không
+                if result:
+                    file_id, old_size = result
+                    if old_size == len(content):
+                        # Nội dung không thay đổi, không cần xử lý lại
+                        cursor.execute("UPDATE files SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (file_id,))
+                        conn.commit()
+                        return  # Thoát nếu không cần cập nhật
+                
+                # Tách nội dung thành chunks
+                chunks = self.split_text(content)
+                
+                # Thêm hoặc cập nhật thông tin file
                 cursor.execute("""
-                    INSERT INTO files (name, size, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO files (name, size, created_at, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ON CONFLICT(name) DO UPDATE SET
                         size = excluded.size,
                         updated_at = CURRENT_TIMESTAMP
-                """, (file_name, file_size))
+                """, (file_name, len(content)))
                 
                 # Lấy file_id
                 cursor.execute("SELECT id FROM files WHERE name = ?", (file_name,))
                 file_id = cursor.fetchone()[0]
                 
-                # Xóa chunks cũ
+                # Xóa chunks cũ và thêm chunks mới chỉ khi cần
                 cursor.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
-                
-                # Thêm chunks mới
-                if len(content) > self.chunk_size:
-                    chunks = self.split_text(content)
-                    for i, chunk in enumerate(chunks):
-                        cursor.execute("""
-                            INSERT INTO chunks (file_id, content, chunk_index)
-                            VALUES (?, ?, ?)
-                        """, (file_id, chunk, i))
-                else:
+                for chunk_index, chunk in enumerate(chunks):
                     cursor.execute("""
-                        INSERT INTO chunks (file_id, content, chunk_index)
-                        VALUES (?, ?, 0)
-                    """, (file_id, content))
+                        INSERT INTO chunks (file_id, content, chunk_index, created_at)
+                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    """, (file_id, chunk, chunk_index))
                 
                 conn.commit()
-                print(f"Đã xử lý và lưu file {file_name} vào database")
                 
-            except Exception as e:
-                conn.rollback()
-                raise e
-            finally:
-                conn.close()
-            
         except Exception as e:
             print(f"Lỗi khi xử lý file {file_path}: {str(e)}")
             raise
-
-    def _read_txt_file(self, file_path: str) -> str:
-        """Đọc nội dung file TXT với các encoding khác nhau"""
-        encodings = ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']
-        for encoding in encodings:
-            try:
-                with open(file_path, 'r', encoding=encoding) as f:
-                    return f.read()
-            except UnicodeDecodeError:
-                continue
-        raise Exception(f"Không thể đọc file với các encoding đã thử")
 
     def delete_file_from_db(self, file_name: str):
         """Xóa dữ liệu của file khỏi database"""
@@ -296,7 +267,7 @@ class VectorDB:
             # Lấy danh sách các file trong thư mục uploaded_files
             uploaded_files = set()
             for file in os.listdir(self.uploaded_files_dir):
-                if file.endswith(('.txt', '.pdf', '.doc', '.docx')):
+                if file.endswith(('.txt', '.pdf', '.doc', '.docx', '.yaml', '.yml')):
                     uploaded_files.add(file)
             
             conn.close()
@@ -377,4 +348,45 @@ class VectorDB:
             return chunks
         except Exception as e:
             print(f"Lỗi khi lấy chunks của file {file_name}: {str(e)}")
+            raise
+
+    def get_all_files(self) -> list:
+        """Lấy danh sách tất cả các file từ database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, size, created_at, updated_at
+                FROM files
+                ORDER BY name
+            """)
+            files = cursor.fetchall()
+            conn.close()
+            return files
+        except Exception as e:
+            print(f"Lỗi khi lấy danh sách files: {str(e)}")
+            raise
+
+    def delete_file_data(self, file_name: str):
+        """Xóa dữ liệu của file khỏi database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Lấy file_id
+                cursor.execute("SELECT id FROM files WHERE name = ?", (file_name,))
+                result = cursor.fetchone()
+                
+                if result:
+                    file_id = result[0]
+                    # Xóa chunks
+                    cursor.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+                    # Xóa file
+                    cursor.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                    print(f"Đã xóa dữ liệu của file {file_name} khỏi database")
+                
+                conn.commit()
+                
+        except Exception as e:
+            print(f"Lỗi khi xóa dữ liệu của file {file_name}: {str(e)}")
             raise 

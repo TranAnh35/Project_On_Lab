@@ -5,3 +5,6 @@ __pycache__/
 uploaded_files/
 *.faiss
 *.db
+*.npy
+*.bin
+*.txt
